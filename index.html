@@ -47,6 +47,9 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:2px 0 0}
 button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 16px;background:var(--accent);color:var(--accent-ink);cursor:pointer;width:100%}
 button:disabled{opacity:.4;cursor:not-allowed}
 button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.sec{background:transparent;color:var(--ink);border:1px solid var(--line);margin-top:8px}
+.paleta{display:flex;gap:8px;margin:4px 0 6px}
+.paleta input{width:46px;height:46px;border:1px solid var(--line);border-radius:10px;padding:2px;background:var(--panel);cursor:pointer}
 #info{margin:14px 0 0;font-size:13px;color:var(--muted);white-space:pre-line}
 .visor{position:relative;background:var(--plate);border-radius:14px;overflow:hidden;border:1px solid var(--plate-line)}
 #vista{position:absolute;inset:0;touch-action:none;cursor:grab}
@@ -103,7 +106,15 @@ button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
       <div id="slidersHoyo"></div>
     </div>
 
+    <label class="chk"><input type="checkbox" id="colorOn"> Pintar con los colores de la foto</label>
+    <div id="grupoColor" hidden>
+      <div id="slidersColor"></div>
+      <div class="paleta" id="paleta"></div>
+      <p class="ayuda" style="margin:0 0 12px">Cambiá cada color por el de tu filamento. El AMS lite admite hasta 4.</p>
+    </div>
+
     <button id="bajar" disabled>Descargar STL</button>
+    <button id="bajarColor" class="sec" hidden>Descargar partes por color (ZIP)</button>
     <p id="info" aria-live="polite"></p>
   </section>
 
@@ -242,10 +253,7 @@ function tallarHoyo(h,mask,nx,ny,cell,diam){
   }
 }
 
-// La superficie se construye sobre una grilla de vertices compartidos: cada vertice
-// toma el promedio de las celdas vecinas que son parte de la pieza. Tapa suave,
-// base plana y paredes solo en el contorno. El resultado es cerrado (watertight).
-function buildTris(h,nx,ny,cell){
+function vertexHeights(h,nx,ny){
   const W=nx+1, vz=new Float32Array(W*(ny+1)), cnt=new Uint8Array(W*(ny+1));
   for(let j=0;j<ny;j++){
     for(let i=0;i<nx;i++){
@@ -256,7 +264,16 @@ function buildTris(h,nx,ny,cell){
     }
   }
   for(let k=0;k<vz.length;k++) if(cnt[k]) vz[k]/=cnt[k];
-  const inc=(i,j)=>i>=0&&j>=0&&i<nx&&j<ny&&h[j*nx+i]>0;
+  return vz;
+}
+
+// La superficie se construye sobre una grilla de vertices compartidos: cada vertice
+// toma el promedio de las celdas vecinas que son parte de la pieza. Tapa suave,
+// base plana y paredes solo en el contorno. El resultado es cerrado (watertight).
+// incl (opcional): subconjunto de celdas a emitir, para armar una parte por color.
+function buildTris(h,nx,ny,cell,incl,vzIn){
+  const W=nx+1, vz=vzIn||vertexHeights(h,nx,ny);
+  const inc=(i,j)=>i>=0&&j>=0&&i<nx&&j<ny&&(incl?incl[j*nx+i]>0:h[j*nx+i]>0);
   const t=[];
   const tri=(a,b,c)=>{t.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]);};
   const P=(i,j,top)=>[i*cell,(ny-j)*cell,top?vz[j*W+i]:0];
@@ -274,6 +291,87 @@ function buildTris(h,nx,ny,cell){
     }
   }
   return Float32Array.from(t);
+}
+
+// Agrupa los colores de la foto (solo en celdas con pieza) en k colores.
+function colorLabels(d,h,nx,ny,k){
+  const n=nx*ny, idx=[];
+  for(let p=0;p<n;p++) if(h[p]>0) idx.push(p);
+  const lab=new Uint8Array(n);
+  const d2=(a,b)=>(a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2;
+  if(!idx.length) return {lab,pal:[]};
+  const step=Math.max(1,Math.floor(idx.length/4000)), S=[];
+  for(let i=0;i<idx.length;i+=step){const p=idx[i]; S.push([d[p*4],d[p*4+1],d[p*4+2]]);}
+  const cs=[S[0].slice()];
+  while(cs.length<k){
+    let bi=0,bd=-1;
+    for(let i=0;i<S.length;i++){
+      let md=Infinity; for(const c of cs){const dd=d2(S[i],c); if(dd<md) md=dd;}
+      if(md>bd){bd=md;bi=i;}
+    }
+    cs.push(S[bi].slice());
+  }
+  for(let it=0;it<12;it++){
+    const sum=cs.map(()=>[0,0,0,0]);
+    for(const s of S){
+      let b=0,bd=Infinity;
+      for(let c=0;c<cs.length;c++){const dd=d2(s,cs[c]); if(dd<bd){bd=dd;b=c;}}
+      sum[b][0]+=s[0]; sum[b][1]+=s[1]; sum[b][2]+=s[2]; sum[b][3]++;
+    }
+    for(let c=0;c<cs.length;c++) if(sum[c][3]) cs[c]=[sum[c][0]/sum[c][3],sum[c][1]/sum[c][3],sum[c][2]/sum[c][3]];
+  }
+  for(const p of idx){
+    const s=[d[p*4],d[p*4+1],d[p*4+2]]; let b=0,bd=Infinity;
+    for(let c=0;c<cs.length;c++){const dd=d2(s,cs[c]); if(dd<bd){bd=dd;b=c;}}
+    lab[p]=b;
+  }
+  // filtro de mayoria para evitar manchas sueltas
+  for(let pass=0;pass<2;pass++){
+    const nl=lab.slice();
+    for(const p of idx){
+      const j=(p/nx)|0, i=p%nx, cn=new Array(cs.length).fill(0);
+      for(let dj=-1;dj<=1;dj++) for(let di=-1;di<=1;di++){
+        const jj=j+dj, ii=i+di;
+        if(jj<0||ii<0||jj>=ny||ii>=nx) continue;
+        const q=jj*nx+ii; if(h[q]>0) cn[lab[q]]++;
+      }
+      let best=lab[p], bc=cn[best];
+      for(let c=0;c<cn.length;c++) if(cn[c]>bc){best=c;bc=cn[c];}
+      nl[p]=best;
+    }
+    lab.set(nl);
+  }
+  const used=[...new Set(idx.map(p=>lab[p]))].sort((a,b)=>a-b);
+  const remap=new Map(used.map((u,i)=>[u,i]));
+  for(const p of idx) lab[p]=remap.get(lab[p]);
+  return {lab,pal:used.map(u=>cs[u].map(Math.round))};
+}
+
+const CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c>>>0;}return t;})();
+function crc32(u8){let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=CRC[(c^u8[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+
+// ZIP sin compresion (suficiente para unos pocos STL).
+function makeZip(files){
+  const enc=new TextEncoder(), chunks=[], central=[]; let offset=0;
+  for(const f of files){
+    const name=enc.encode(f.name), crc=crc32(f.data), size=f.data.length;
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true);
+    lh.setUint16(12,0x21,true); lh.setUint32(14,crc,true); lh.setUint32(18,size,true); lh.setUint32(22,size,true);
+    lh.setUint16(26,name.length,true);
+    chunks.push(new Uint8Array(lh.buffer),name,f.data);
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true);
+    ch.setUint16(14,0x21,true); ch.setUint32(16,crc,true); ch.setUint32(20,size,true); ch.setUint32(24,size,true);
+    ch.setUint16(28,name.length,true); ch.setUint32(42,offset,true);
+    central.push(new Uint8Array(ch.buffer),name);
+    offset+=30+name.length+size;
+  }
+  let cdSize=0; for(const c of central) cdSize+=c.length;
+  const end=new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true); end.setUint16(8,files.length,true); end.setUint16(10,files.length,true);
+  end.setUint32(12,cdSize,true); end.setUint32(16,offset,true);
+  return new Blob([...chunks,...central,new Uint8Array(end.buffer)],{type:"application/zip"});
 }
 
 function makeSTL(tris){
@@ -300,15 +398,16 @@ const $=id=>document.getElementById(id);
 const MODOS={
   relieve:{base:2,relieve:4,inv:false,ayuda:"Lo claro de la foto sube y lo oscuro baja. Ideal para cuadros y placas decorativas."},
   lito:{base:0.8,relieve:2.4,inv:true,ayuda:"Lo oscuro queda más grueso y deja pasar menos luz. Imprimila en blanco y mirala a contraluz."},
-  silueta:{base:3,relieve:0,inv:false,ayuda:"Recorta el objeto del fondo y lo extruye. Sirve para llaveros, toppers y figuras planas."}
+  silueta:{base:1.2,relieve:2.4,inv:false,sinBase:true,corte:30,ayuda:"Recorta el objeto del fondo y deja solo la parte con relieve; lo demás no se imprime. Sirve para llaveros, toppers y figuras."}
 };
-const S={lado:80,res:180,base:2,relieve:4,suave:1,tol:40,hoyo:5,corte:25};
+const S={lado:80,res:180,base:2,relieve:4,suave:1,tol:40,hoyo:5,corte:25,ncol:3};
 const CTRL=[
   ["sliders","lado","Tamaño del lado mayor","mm",20,250,5],
   ["sliders","res","Detalle de la malla","celdas",60,300,10],
   ["sliders","base","Grosor de la base","mm",0.4,10,0.2],
   ["sliders","relieve","Altura del relieve","mm",0,20,0.2],
   ["sliders","suave","Suavizado","",0,5,1],
+  ["slidersColor","ncol","Cantidad de colores","",2,4,1],
   ["slidersSinBase","corte","Nivel de corte","%",5,90,5],
   ["slidersSilueta","tol","Tolerancia del fondo","",5,120,5],
   ["slidersHoyo","hoyo","Diámetro del agujero","mm",3,12,0.5]
@@ -329,11 +428,13 @@ function pintar(key){
 }
 function sincronizar(){CTRL.forEach(c=>{ranges[c[1]].value=S[c[1]];pintar(c[1]);});}
 
-let modo="relieve", img=null, nombre="pieza", tris=null, dims=null;
+let modo="relieve", img=null, nombre="pieza", tris=null, dims=null, parts=null, paletaHex=[], overrides=[];
 
 function aplicarModo(m){
   modo=m; const p=MODOS[m];
   S.base=p.base; S.relieve=p.relieve; $("inv").checked=p.inv;
+  $("sinBase").checked=!!p.sinBase; if(p.corte) S.corte=p.corte;
+  sincSinBase();
   $("ayudaModo").textContent=p.ayuda;
   $("grupoSilueta").hidden=(m!=="silueta");
   sincronizar();
@@ -342,12 +443,25 @@ document.querySelectorAll('input[name=modo]').forEach(r=>r.addEventListener("cha
 $("inv").addEventListener("change",pedir);
 $("hoyoOn").addEventListener("change",pedir);
 $("soloMayor").addEventListener("change",pedir);
-$("sinBase").addEventListener("change",()=>{
+function sincSinBase(){
   const on=$("sinBase").checked;
   $("grupoSinBase").hidden=!on;
   document.querySelector('label[for=r_base]').textContent=on?"Grosor mínimo":"Grosor de la base";
-  pedir();
-});
+}
+$("sinBase").addEventListener("change",()=>{sincSinBase();pedir();});
+$("colorOn").addEventListener("change",()=>{$("grupoColor").hidden=!$("colorOn").checked;pedir();});
+
+const toHex=c=>"#"+c.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")).join("");
+const hexRgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);
+function renderPaleta(){
+  const box=$("paleta"); box.innerHTML="";
+  paletaHex.forEach((hex,i)=>{
+    const inp=document.createElement("input");
+    inp.type="color"; inp.value=hex; inp.setAttribute("aria-label","Color "+(i+1));
+    inp.addEventListener("input",()=>{overrides[i]=inp.value;paletaHex[i]=inp.value;actualizarMalla();});
+    box.appendChild(inp);
+  });
+}
 aplicarModo("relieve");
 
 // ---------- Carga de la foto ----------
@@ -357,7 +471,7 @@ function cargar(file){
   im.onload=()=>{
     img=im; URL.revokeObjectURL(url);
     nombre=file.name.replace(/\.[^.]+$/,"").replace(/[^\w\-]+/g,"_")||"pieza";
-    $("dropTitulo").textContent=file.name;
+    $("dropTitulo").textContent=file.name; overrides=[];
     $("vacio").hidden=true; reencuadrar=true; pedir(0);
   };
   im.onerror=()=>{$("info").textContent="No se pudo leer esa imagen. Probá con un JPG o PNG.";};
@@ -414,7 +528,19 @@ function calcular(){
     const cell=S.lado/Math.max(nx,ny);
     if(sel&&modo==="silueta"&&$("hoyoOn").checked) tallarHoyo(h,sel,nx,ny,cell,S.hoyo);
 
-    tris=buildTris(h,nx,ny,cell);
+    const vz=vertexHeights(h,nx,ny);
+    tris=buildTris(h,nx,ny,cell,null,vz);
+    parts=null; $("bajarColor").hidden=true;
+    if($("colorOn").checked&&tris.length){
+      const cl=colorLabels(d,h,nx,ny,Math.round(S.ncol));
+      parts=cl.pal.map((c,ci)=>{
+        const inc=new Uint8Array(n);
+        for(let p=0;p<n;p++) inc[p]=(h[p]>0&&cl.lab[p]===ci)?1:0;
+        return buildTris(h,nx,ny,cell,inc,vz);
+      });
+      paletaHex=cl.pal.map((c,ci)=>overrides[ci]||toHex(c));
+      renderPaleta(); $("bajarColor").hidden=false;
+    }
     let hmax=0; for(let p=0;p<n;p++) if(h[p]>hmax) hmax=h[p];
     dims={w:nx*cell,hh:ny*cell,z:hmax};
     $("bajar").disabled=!tris.length;
@@ -425,6 +551,7 @@ function calcular(){
     const mb=(84+tris.length/9*50)/1048576;
     $("info").textContent="Medidas: "+dims.w.toFixed(0)+" × "+dims.hh.toFixed(0)+" × "+dims.z.toFixed(1)+" mm\n"+
       (tris.length/9).toLocaleString("es-AR")+" triángulos, STL de "+mb.toFixed(1)+" MB"+
+      (parts?"\n"+parts.length+" colores, una parte del ZIP por cada uno":"")+
       ((dims.w>256||dims.hh>256)?"\nOjo: no entra en la placa de la A1.":"");
     actualizarMalla();
   }catch(err){
@@ -481,13 +608,27 @@ function dibujar(){
   renderer.render(scene,camera);
 }
 function actualizarMalla(){
-  if(!renderer) return;
-  if(mesh){scene.remove(mesh);mesh.geometry.dispose();}
+  if(!renderer||!tris) return;
+  if(mesh){scene.remove(mesh);mesh.geometry.dispose();mesh.material.dispose();}
   const g=new THREE.BufferGeometry();
-  g.setAttribute("position",new THREE.BufferAttribute(tris,3));
+  let pos=tris, col=null;
+  if(parts){
+    let tot=0; parts.forEach(q=>{tot+=q.length;});
+    pos=new Float32Array(tot); col=new Float32Array(tot);
+    let o=0;
+    parts.forEach((q,ci)=>{
+      pos.set(q,o); const rgb=hexRgb(paletaHex[ci]);
+      for(let v=0;v<q.length;v+=3){col[o+v]=rgb[0];col[o+v+1]=rgb[1];col[o+v+2]=rgb[2];}
+      o+=q.length;
+    });
+  }
+  g.setAttribute("position",new THREE.BufferAttribute(pos,3));
+  if(col) g.setAttribute("color",new THREE.BufferAttribute(col,3));
   g.computeVertexNormals();
   g.translate(-dims.w/2,-dims.hh/2,0);
-  mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0xe9e2d0,roughness:0.75,metalness:0}));
+  const mat=col?new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.75,metalness:0})
+               :new THREE.MeshStandardMaterial({color:0xe9e2d0,roughness:0.75,metalness:0});
+  mesh=new THREE.Mesh(g,mat);
   scene.add(mesh);
   if(reencuadrar){
     orbit.t={x:0,y:0,z:dims.z/2};
@@ -503,6 +644,22 @@ $("bajar").addEventListener("click",()=>{
   const blob=new Blob([makeSTL(tris)],{type:"model/stl"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob); a.download=nombre+"_"+modo+".stl";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+});
+
+$("bajarColor").addEventListener("click",()=>{
+  if(!parts) return;
+  const files=parts.map((q,i)=>({
+    name:"parte"+(i+1)+"_"+paletaHex[i].slice(1)+".stl",
+    data:new Uint8Array(makeSTL(q))
+  }));
+  const texto="Partes por color de "+nombre+"\r\n\r\n"+
+    paletaHex.map((h,i)=>"parte"+(i+1)+": color "+h).join("\r\n")+
+    "\r\n\r\nEn Bambu Studio: seleccioná todos los STL, arrastralos a la ventana y respondé que son partes de un solo objeto. Después asigná un filamento del AMS lite a cada parte.\r\n";
+  files.push({name:"LEEME.txt",data:new TextEncoder().encode(texto)});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(makeZip(files)); a.download=nombre+"_"+modo+"_colores.zip";
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 });
