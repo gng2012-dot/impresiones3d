@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foto a STL para Bambu Lab A1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#e8edf2; --panel:#f7f9fb; --ink:#1a2332; --muted:#5b6778; --line:#cfd8e2;
+  --accent:#5b3fd9; --accent-ink:#fff; --plate:#2b303a; --plate-line:#3b424f;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"Public Sans","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#14181f; --panel:#1c212b; --ink:#e9edf3; --muted:#9aa5b5; --line:#2f3745; --accent:#9d87ff; --accent-ink:#14102b; --plate:#0f1217; --plate-line:#232a34;}
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
+main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px;height:100vh;min-height:620px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;overflow-y:auto}
+h1{font-family:var(--display);font-weight:700;font-size:26px;line-height:1.1;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 18px;font-size:14px}
+.drop{display:block;border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;cursor:pointer;margin-bottom:18px;transition:border-color .15s,background .15s}
+.drop:hover,.drop.sobre{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.drop strong{display:block;font-family:var(--display);font-size:17px}
+.drop span{color:var(--muted);font-size:13px}
+.drop:focus-within{outline:3px solid var(--accent);outline-offset:2px}
+fieldset{border:0;padding:0;margin:0 0 16px}
+legend{font-weight:600;margin-bottom:6px;padding:0}
+.modos{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.modos label{position:relative;text-align:center;padding:9px 4px;cursor:pointer;font-weight:500;font-size:14px}
+.modos input{position:absolute;opacity:0;inset:0;cursor:pointer}
+.modos label+label{border-left:1px solid var(--line)}
+.modos label:has(input:checked){background:var(--accent);color:var(--accent-ink)}
+.modos label:has(input:focus-visible){outline:3px solid var(--accent);outline-offset:-3px}
+.ayuda{color:var(--muted);font-size:13px;margin:8px 0 0}
+.fila{margin:0 0 12px}
+.fila .top{display:flex;justify-content:space-between;font-size:14px}
+.fila output{color:var(--muted);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent);margin:2px 0 0}
+.chk{display:flex;gap:8px;align-items:center;margin:0 0 12px;font-size:14px;cursor:pointer}
+.chk input{accent-color:var(--accent);width:16px;height:16px}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 16px;background:var(--accent);color:var(--accent-ink);cursor:pointer;width:100%}
+button:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+#info{margin:14px 0 0;font-size:13px;color:var(--muted);white-space:pre-line}
+.visor{position:relative;background:var(--plate);border-radius:14px;overflow:hidden;border:1px solid var(--plate-line)}
+#vista{position:absolute;inset:0;touch-action:none;cursor:grab}
+#vista:active{cursor:grabbing}
+#vista canvas{display:block;width:100%;height:100%}
+.vacio{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:#aab3c2;padding:24px;pointer-events:none}
+.vacio p{max-width:34ch;margin:0}
+.vacio b{display:block;font-family:var(--display);font-size:20px;color:#e9edf3;margin-bottom:4px}
+.pie{position:absolute;left:14px;bottom:10px;font-size:12px;color:#8691a3;pointer-events:none}
+[hidden]{display:none!important}
+@media (max-width:860px){
+  main{grid-template-columns:1fr;height:auto}
+  .visor{height:60vh;order:-1}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <section class="panel" aria-label="Controles">
+    <h1>Foto a STL</h1>
+    <p class="sub">Convertí una foto en una pieza para tu Bambu Lab A1. Todo se calcula en tu navegador; la foto no sale de tu computadora.</p>
+
+    <label class="drop" id="drop">
+      <input type="file" id="archivo" accept="image/*" hidden>
+      <strong id="dropTitulo">Subí una foto</strong>
+      <span>o arrastrala hasta acá</span>
+    </label>
+
+    <fieldset>
+      <legend>Tipo de pieza</legend>
+      <div class="modos">
+        <label><input type="radio" name="modo" value="relieve" checked>Relieve</label>
+        <label><input type="radio" name="modo" value="lito">Litofanía</label>
+        <label><input type="radio" name="modo" value="silueta">Silueta</label>
+      </div>
+      <p class="ayuda" id="ayudaModo"></p>
+    </fieldset>
+
+    <div id="sliders"></div>
+
+    <label class="chk"><input type="checkbox" id="inv"> Lo oscuro queda más alto</label>
+
+    <div id="grupoSilueta" hidden>
+      <div id="slidersSilueta"></div>
+      <label class="chk"><input type="checkbox" id="hoyoOn"> Agujero para llavero</label>
+      <div id="slidersHoyo"></div>
+    </div>
+
+    <button id="bajar" disabled>Descargar STL</button>
+    <p id="info" aria-live="polite"></p>
+  </section>
+
+  <section class="visor" aria-label="Vista previa 3D">
+    <div id="vista"></div>
+    <div class="vacio" id="vacio"><p><b>Tu pieza aparece acá</b>Subí una foto y vas a verla sobre la placa de la A1, lista para girar con el mouse.</p></div>
+    <div class="vacio" id="aviso3d" hidden><p><b>No se pudo cargar la vista 3D</b>Revisá tu conexión. Igual podés descargar el STL.</p></div>
+    <div class="pie">Placa de 256 × 256 mm. Arrastrá para girar, rueda para acercar.</div>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* <core> */
+function boxBlur(a,nx,ny,n){
+  let src=a, dst=new Float32Array(a.length);
+  for(let k=0;k<n;k++){
+    for(let j=0;j<ny;j++){
+      for(let i=0;i<nx;i++){
+        let s=0,c=0;
+        for(let dj=-1;dj<=1;dj++){
+          const jj=j+dj; if(jj<0||jj>=ny) continue;
+          for(let di=-1;di<=1;di++){
+            const ii=i+di; if(ii<0||ii>=nx) continue;
+            s+=src[jj*nx+ii]; c++;
+          }
+        }
+        dst[j*nx+i]=s/c;
+      }
+    }
+    const t=src; src=dst; dst=(t===a)?new Float32Array(a.length):t;
+  }
+  return src;
+}
+
+function normalize(l,mask){
+  const hist=new Uint32Array(256); let total=0;
+  for(let i=0;i<l.length;i++){
+    if(mask&&!mask[i]) continue;
+    hist[Math.max(0,Math.min(255,l[i]|0))]++; total++;
+  }
+  let lo=0,hi=255,acc=0;
+  for(let i=0;i<256;i++){acc+=hist[i]; if(acc>=total*0.01){lo=i;break;}}
+  acc=0;
+  for(let i=255;i>=0;i--){acc+=hist[i]; if(acc>=total*0.01){hi=i;break;}}
+  if(hi<=lo) hi=lo+1;
+  const o=new Float32Array(l.length);
+  for(let i=0;i<l.length;i++) o[i]=Math.max(0,Math.min(1,(l[i]-lo)/(hi-lo)));
+  return o;
+}
+
+function silhouetteMask(d,nx,ny,tol){
+  const n=nx*ny, m=new Uint8Array(n);
+  const border=[];
+  for(let i=0;i<nx;i++){border.push(i,(ny-1)*nx+i);}
+  for(let j=1;j<ny-1;j++){border.push(j*nx,j*nx+nx-1);}
+  let transp=0,bc=0,br=0,bg=0,bb=0;
+  for(const p of border){
+    if(d[p*4+3]<128) transp++;
+    else {br+=d[p*4];bg+=d[p*4+1];bb+=d[p*4+2];bc++;}
+  }
+  const useAlpha=transp>border.length*0.5;
+  if(bc>0){br/=bc;bg/=bc;bb/=bc;}
+  for(let p=0;p<n;p++){
+    if(d[p*4+3]<128){m[p]=0;continue;}
+    if(useAlpha){m[p]=1;continue;}
+    const dr=d[p*4]-br,dg=d[p*4+1]-bg,db=d[p*4+2]-bb;
+    m[p]=Math.sqrt(dr*dr+dg*dg+db*db)>tol?1:0;
+  }
+  // quedarse con la mayor componente conectada
+  const lab=new Int32Array(n), q=new Int32Array(n);
+  let best=0,bestId=0,id=0;
+  for(let s=0;s<n;s++){
+    if(!m[s]||lab[s]) continue;
+    id++; let h=0,t=0; q[t++]=s; lab[s]=id;
+    while(h<t){
+      const p=q[h++], x=p%nx, y=(p/nx)|0;
+      if(x>0&&m[p-1]&&!lab[p-1]){lab[p-1]=id;q[t++]=p-1;}
+      if(x<nx-1&&m[p+1]&&!lab[p+1]){lab[p+1]=id;q[t++]=p+1;}
+      if(y>0&&m[p-nx]&&!lab[p-nx]){lab[p-nx]=id;q[t++]=p-nx;}
+      if(y<ny-1&&m[p+nx]&&!lab[p+nx]){lab[p+nx]=id;q[t++]=p+nx;}
+    }
+    if(t>best){best=t;bestId=id;}
+  }
+  const o=new Uint8Array(n);
+  if(bestId) for(let p=0;p<n;p++) o[p]=lab[p]===bestId?1:0;
+  // rellenar huecos internos: lo que no se alcanza desde el borde es parte de la pieza
+  const fondo=new Uint8Array(n); let h2=0,t2=0;
+  for(const p of border){ if(!o[p]&&!fondo[p]){fondo[p]=1;q[t2++]=p;} }
+  while(h2<t2){
+    const p=q[h2++], x=p%nx, y=(p/nx)|0;
+    if(x>0&&!o[p-1]&&!fondo[p-1]){fondo[p-1]=1;q[t2++]=p-1;}
+    if(x<nx-1&&!o[p+1]&&!fondo[p+1]){fondo[p+1]=1;q[t2++]=p+1;}
+    if(y>0&&!o[p-nx]&&!fondo[p-nx]){fondo[p-nx]=1;q[t2++]=p-nx;}
+    if(y<ny-1&&!o[p+nx]&&!fondo[p+nx]){fondo[p+nx]=1;q[t2++]=p+nx;}
+  }
+  const res=new Uint8Array(n);
+  if(bestId) for(let p=0;p<n;p++) res[p]=fondo[p]?0:1;
+  return res;
+}
+
+function tallarHoyo(h,mask,nx,ny,cell,diam){
+  let top=-1;
+  for(let j=0;j<ny&&top<0;j++) for(let i=0;i<nx;i++) if(mask[j*nx+i]){top=j;break;}
+  if(top<0) return;
+  const lim=Math.min(ny-1,top+Math.max(3,Math.round(ny*0.06)));
+  let sx=0,c=0;
+  for(let j=top;j<=lim;j++) for(let i=0;i<nx;i++) if(mask[j*nx+i]){sx+=i;c++;}
+  const r=(diam/2)/cell, cx=sx/c, cy=top+r+2;
+  for(let j=0;j<ny;j++) for(let i=0;i<nx;i++){
+    const dx=i-cx, dy=j-cy;
+    if(dx*dx+dy*dy<=r*r) h[j*nx+i]=0;
+  }
+}
+
+// La superficie se construye sobre una grilla de vertices compartidos: cada vertice
+// toma el promedio de las celdas vecinas que son parte de la pieza. Tapa suave,
+// base plana y paredes solo en el contorno. El resultado es cerrado (watertight).
+function buildTris(h,nx,ny,cell){
+  const W=nx+1, vz=new Float32Array(W*(ny+1)), cnt=new Uint8Array(W*(ny+1));
+  for(let j=0;j<ny;j++){
+    for(let i=0;i<nx;i++){
+      const z=h[j*nx+i]; if(z<=0) continue;
+      for(let dj=0;dj<2;dj++) for(let di=0;di<2;di++){
+        const k=(j+dj)*W+(i+di); vz[k]+=z; cnt[k]++;
+      }
+    }
+  }
+  for(let k=0;k<vz.length;k++) if(cnt[k]) vz[k]/=cnt[k];
+  const inc=(i,j)=>i>=0&&j>=0&&i<nx&&j<ny&&h[j*nx+i]>0;
+  const t=[];
+  const tri=(a,b,c)=>{t.push(a[0],a[1],a[2],b[0],b[1],b[2],c[0],c[1],c[2]);};
+  const P=(i,j,top)=>[i*cell,(ny-j)*cell,top?vz[j*W+i]:0];
+  for(let j=0;j<ny;j++){
+    for(let i=0;i<nx;i++){
+      if(!inc(i,j)) continue;
+      const A=P(i,j,1),B=P(i+1,j,1),C=P(i+1,j+1,1),D=P(i,j+1,1);
+      const A0=P(i,j,0),B0=P(i+1,j,0),C0=P(i+1,j+1,0),D0=P(i,j+1,0);
+      tri(D,C,B); tri(D,B,A);          // tapa
+      tri(D0,B0,C0); tri(D0,A0,B0);    // base
+      if(!inc(i+1,j)){tri(C0,B0,B);tri(C0,B,C);}  // pared este
+      if(!inc(i-1,j)){tri(A0,D0,D);tri(A0,D,A);}  // pared oeste
+      if(!inc(i,j-1)){tri(B0,A0,A);tri(B0,A,B);}  // pared norte
+      if(!inc(i,j+1)){tri(D0,C0,C);tri(D0,C,D);}  // pared sur
+    }
+  }
+  return Float32Array.from(t);
+}
+
+function makeSTL(tris){
+  const n=tris.length/9;
+  const buf=new ArrayBuffer(84+n*50), dv=new DataView(buf);
+  dv.setUint32(80,n,true);
+  let o=84;
+  for(let k=0;k<n;k++){
+    const b=k*9;
+    const ux=tris[b+3]-tris[b], uy=tris[b+4]-tris[b+1], uz=tris[b+5]-tris[b+2];
+    const vx=tris[b+6]-tris[b], vy=tris[b+7]-tris[b+1], vz=tris[b+8]-tris[b+2];
+    let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const l=Math.hypot(nx,ny,nz)||1; nx/=l; ny/=l; nz/=l;
+    dv.setFloat32(o,nx,true); dv.setFloat32(o+4,ny,true); dv.setFloat32(o+8,nz,true);
+    for(let v=0;v<9;v++) dv.setFloat32(o+12+v*4,tris[b+v],true);
+    o+=50;
+  }
+  return buf;
+}
+/* </core> */
+
+// ---------- Interfaz ----------
+const $=id=>document.getElementById(id);
+const MODOS={
+  relieve:{base:2,relieve:4,inv:false,ayuda:"Lo claro de la foto sube y lo oscuro baja. Ideal para cuadros y placas decorativas."},
+  lito:{base:0.8,relieve:2.4,inv:true,ayuda:"Lo oscuro queda más grueso y deja pasar menos luz. Imprimila en blanco y mirala a contraluz."},
+  silueta:{base:3,relieve:0,inv:false,ayuda:"Recorta el objeto del fondo y lo extruye. Sirve para llaveros, toppers y figuras planas."}
+};
+const S={lado:80,res:180,base:2,relieve:4,suave:1,tol:40,hoyo:5};
+const CTRL=[
+  ["sliders","lado","Tamaño del lado mayor","mm",20,250,5],
+  ["sliders","res","Detalle de la malla","celdas",60,300,10],
+  ["sliders","base","Grosor de la base","mm",0.4,10,0.2],
+  ["sliders","relieve","Altura del relieve","mm",0,20,0.2],
+  ["sliders","suave","Suavizado","",0,5,1],
+  ["slidersSilueta","tol","Tolerancia del fondo","",5,120,5],
+  ["slidersHoyo","hoyo","Diámetro del agujero","mm",3,12,0.5]
+];
+const outs={}, ranges={};
+CTRL.forEach(([cont,key,label,unit,min,max,step])=>{
+  const row=document.createElement("div"); row.className="fila";
+  row.innerHTML='<div class="top"><label for="r_'+key+'">'+label+'</label><output id="o_'+key+'"></output></div>'+
+    '<input type="range" id="r_'+key+'" min="'+min+'" max="'+max+'" step="'+step+'">';
+  $(cont).appendChild(row);
+  const r=row.querySelector("input"), o=row.querySelector("output");
+  ranges[key]=r; outs[key]={o,unit};
+  r.addEventListener("input",()=>{S[key]=parseFloat(r.value);pintar(key);pedir();});
+});
+function pintar(key){
+  const {o,unit}=outs[key];
+  o.textContent=(Number.isInteger(S[key])?S[key]:S[key].toFixed(1))+(unit?" "+unit:"");
+}
+function sincronizar(){CTRL.forEach(c=>{ranges[c[1]].value=S[c[1]];pintar(c[1]);});}
+
+let modo="relieve", img=null, nombre="pieza", tris=null, dims=null;
+
+function aplicarModo(m){
+  modo=m; const p=MODOS[m];
+  S.base=p.base; S.relieve=p.relieve; $("inv").checked=p.inv;
+  $("ayudaModo").textContent=p.ayuda;
+  $("grupoSilueta").hidden=(m!=="silueta");
+  sincronizar();
+}
+document.querySelectorAll('input[name=modo]').forEach(r=>r.addEventListener("change",()=>{aplicarModo(r.value);pedir();}));
+$("inv").addEventListener("change",pedir);
+$("hoyoOn").addEventListener("change",pedir);
+aplicarModo("relieve");
+
+// ---------- Carga de la foto ----------
+function cargar(file){
+  if(!file||!file.type.startsWith("image/")) return;
+  const url=URL.createObjectURL(file), im=new Image();
+  im.onload=()=>{
+    img=im; URL.revokeObjectURL(url);
+    nombre=file.name.replace(/\.[^.]+$/,"").replace(/[^\w\-]+/g,"_")||"pieza";
+    $("dropTitulo").textContent=file.name;
+    $("vacio").hidden=true; reencuadrar=true; pedir(0);
+  };
+  im.onerror=()=>{$("info").textContent="No se pudo leer esa imagen. Probá con un JPG o PNG.";};
+  im.src=url;
+}
+$("archivo").addEventListener("change",e=>cargar(e.target.files[0]));
+const drop=$("drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("sobre");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("sobre");}));
+drop.addEventListener("drop",e=>cargar(e.dataTransfer.files[0]));
+window.addEventListener("dragover",e=>e.preventDefault());
+window.addEventListener("drop",e=>{e.preventDefault();if(e.target!==drop&&!drop.contains(e.target)) cargar(e.dataTransfer.files[0]);});
+
+// ---------- Cálculo ----------
+let timer=null;
+function pedir(ms){clearTimeout(timer);timer=setTimeout(calcular,ms==null?140:ms);}
+
+function calcular(){
+  if(!img) return;
+  try{
+    const res=Math.round(S.res), ar=img.naturalWidth/img.naturalHeight;
+    let nx,ny;
+    if(ar>=1){nx=res;ny=Math.max(2,Math.round(res/ar));}else{ny=res;nx=Math.max(2,Math.round(res*ar));}
+    const c=document.createElement("canvas"); c.width=nx; c.height=ny;
+    const ctx=c.getContext("2d",{willReadFrequently:true});
+    ctx.drawImage(img,0,0,nx,ny);
+    const d=ctx.getImageData(0,0,nx,ny).data, n=nx*ny;
+
+    let lum=new Float32Array(n);
+    for(let p=0;p<n;p++){
+      const a=d[p*4+3]/255;
+      lum[p]=(0.299*d[p*4]+0.587*d[p*4+1]+0.114*d[p*4+2])*a+255*(1-a);
+    }
+    const mask=(modo==="silueta")?silhouetteMask(d,nx,ny,S.tol):null;
+    if(S.suave>0) lum=boxBlur(lum,nx,ny,S.suave);
+    const nr=normalize(lum,mask), inv=$("inv").checked;
+    const h=new Float32Array(n);
+    for(let p=0;p<n;p++){
+      if(mask&&!mask[p]){h[p]=0;continue;}
+      const v=inv?1-nr[p]:nr[p];
+      h[p]=S.base+v*S.relieve;
+    }
+    const cell=S.lado/Math.max(nx,ny);
+    if(mask&&$("hoyoOn").checked) tallarHoyo(h,mask,nx,ny,cell,S.hoyo);
+
+    tris=buildTris(h,nx,ny,cell);
+    let hmax=0; for(let p=0;p<n;p++) if(h[p]>hmax) hmax=h[p];
+    dims={w:nx*cell,hh:ny*cell,z:hmax};
+    $("bajar").disabled=!tris.length;
+    if(!tris.length){
+      $("info").textContent="No se encontró ninguna pieza. Subí la tolerancia del fondo o usá una foto con fondo liso.";
+      if(mesh) mesh.visible=false; dibujar(); return;
+    }
+    const mb=(84+tris.length/9*50)/1048576;
+    $("info").textContent="Medidas: "+dims.w.toFixed(0)+" × "+dims.hh.toFixed(0)+" × "+dims.z.toFixed(1)+" mm\n"+
+      (tris.length/9).toLocaleString("es-AR")+" triángulos, STL de "+mb.toFixed(1)+" MB"+
+      ((dims.w>256||dims.hh>256)?"\nOjo: no entra en la placa de la A1.":"");
+    actualizarMalla();
+  }catch(err){
+    $("info").textContent="Algo falló al procesar la foto: "+err.message;
+  }
+}
+
+// ---------- Vista 3D ----------
+let renderer,scene,camera,mesh,grid,reencuadrar=false;
+const orbit={th:-Math.PI/2,ph:1.0,r:160,t:{x:0,y:0,z:0}};
+function iniciar3D(){
+  if(typeof THREE==="undefined"){$("aviso3d").hidden=false;return;}
+  const cont=$("vista");
+  renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  cont.appendChild(renderer.domElement);
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(40,1,1,3000);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x556070,0.9));
+  const l1=new THREE.DirectionalLight(0xffffff,0.8); l1.position.set(120,-160,220); scene.add(l1);
+  const l2=new THREE.DirectionalLight(0xbfd0ff,0.35); l2.position.set(-150,100,80); scene.add(l2);
+  grid=new THREE.GridHelper(256,16,0x5a6475,0x3b4350); grid.rotation.x=Math.PI/2; scene.add(grid);
+  const borde=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(256,256)),new THREE.LineBasicMaterial({color:0x7d889a}));
+  scene.add(borde);
+
+  let drag=null;
+  cont.addEventListener("pointerdown",e=>{drag={x:e.clientX,y:e.clientY};cont.setPointerCapture(e.pointerId);});
+  cont.addEventListener("pointermove",e=>{
+    if(!drag) return;
+    orbit.th-=(e.clientX-drag.x)*0.008;
+    orbit.ph=Math.max(0.05,Math.min(Math.PI/2+0.2,orbit.ph-(e.clientY-drag.y)*0.008));
+    drag={x:e.clientX,y:e.clientY}; dibujar();
+  });
+  const fin=()=>{drag=null;};
+  cont.addEventListener("pointerup",fin); cont.addEventListener("pointercancel",fin);
+  cont.addEventListener("wheel",e=>{
+    e.preventDefault();
+    orbit.r=Math.max(30,Math.min(900,orbit.r*(e.deltaY>0?1.1:0.9))); dibujar();
+  },{passive:false});
+  new ResizeObserver(ajustar).observe(cont);
+  ajustar();
+}
+function ajustar(){
+  if(!renderer) return;
+  const w=$("vista").clientWidth||1, h=$("vista").clientHeight||1;
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); dibujar();
+}
+function dibujar(){
+  if(!renderer) return;
+  const {th,ph,r,t}=orbit;
+  camera.up.set(0,0,1);
+  camera.position.set(t.x+r*Math.sin(ph)*Math.cos(th),t.y+r*Math.sin(ph)*Math.sin(th),t.z+r*Math.cos(ph));
+  camera.lookAt(t.x,t.y,t.z);
+  renderer.render(scene,camera);
+}
+function actualizarMalla(){
+  if(!renderer) return;
+  if(mesh){scene.remove(mesh);mesh.geometry.dispose();}
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.BufferAttribute(tris,3));
+  g.computeVertexNormals();
+  g.translate(-dims.w/2,-dims.hh/2,0);
+  mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0xe9e2d0,roughness:0.75,metalness:0}));
+  scene.add(mesh);
+  if(reencuadrar){
+    orbit.t={x:0,y:0,z:dims.z/2};
+    orbit.r=Math.max(80,Math.max(dims.w,dims.hh)*2.1);
+    orbit.th=-Math.PI/2; orbit.ph=1.0; reencuadrar=false;
+  }
+  dibujar();
+}
+
+// ---------- Descarga ----------
+$("bajar").addEventListener("click",()=>{
+  if(!tris||!tris.length) return;
+  const blob=new Blob([makeSTL(tris)],{type:"model/stl"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=nombre+"_"+modo+".stl";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+});
+
+iniciar3D();
+})();
+</script>
+</body>
+</html>
