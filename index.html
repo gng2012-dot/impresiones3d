@@ -90,6 +90,13 @@ button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
 
     <label class="chk"><input type="checkbox" id="inv"> Lo oscuro queda más alto</label>
 
+    <label class="chk"><input type="checkbox" id="sinBase"> Sin base: recortar lo más bajo</label>
+    <div id="grupoSinBase" hidden>
+      <p class="ayuda" style="margin:-4px 0 10px">Se quita todo lo que queda por debajo del nivel de corte, así no hay placa de fondo. El grosor de arriba pasa a ser el grosor mínimo de lo que queda.</p>
+      <div id="slidersSinBase"></div>
+      <label class="chk"><input type="checkbox" id="soloMayor" checked> Descartar piezas sueltas</label>
+    </div>
+
     <div id="grupoSilueta" hidden>
       <div id="slidersSilueta"></div>
       <label class="chk"><input type="checkbox" id="hoyoOn"> Agujero para llavero</label>
@@ -201,6 +208,26 @@ function silhouetteMask(d,nx,ny,tol){
   return res;
 }
 
+function soloMayor(m,nx,ny){
+  const n=nx*ny, lab=new Int32Array(n), q=new Int32Array(n);
+  let best=0,bestId=0,id=0;
+  for(let s=0;s<n;s++){
+    if(!m[s]||lab[s]) continue;
+    id++; let h=0,t=0; q[t++]=s; lab[s]=id;
+    while(h<t){
+      const p=q[h++], x=p%nx, y=(p/nx)|0;
+      if(x>0&&m[p-1]&&!lab[p-1]){lab[p-1]=id;q[t++]=p-1;}
+      if(x<nx-1&&m[p+1]&&!lab[p+1]){lab[p+1]=id;q[t++]=p+1;}
+      if(y>0&&m[p-nx]&&!lab[p-nx]){lab[p-nx]=id;q[t++]=p-nx;}
+      if(y<ny-1&&m[p+nx]&&!lab[p+nx]){lab[p+nx]=id;q[t++]=p+nx;}
+    }
+    if(t>best){best=t;bestId=id;}
+  }
+  const o=new Uint8Array(n);
+  if(bestId) for(let p=0;p<n;p++) o[p]=lab[p]===bestId?1:0;
+  return o;
+}
+
 function tallarHoyo(h,mask,nx,ny,cell,diam){
   let top=-1;
   for(let j=0;j<ny&&top<0;j++) for(let i=0;i<nx;i++) if(mask[j*nx+i]){top=j;break;}
@@ -275,13 +302,14 @@ const MODOS={
   lito:{base:0.8,relieve:2.4,inv:true,ayuda:"Lo oscuro queda más grueso y deja pasar menos luz. Imprimila en blanco y mirala a contraluz."},
   silueta:{base:3,relieve:0,inv:false,ayuda:"Recorta el objeto del fondo y lo extruye. Sirve para llaveros, toppers y figuras planas."}
 };
-const S={lado:80,res:180,base:2,relieve:4,suave:1,tol:40,hoyo:5};
+const S={lado:80,res:180,base:2,relieve:4,suave:1,tol:40,hoyo:5,corte:25};
 const CTRL=[
   ["sliders","lado","Tamaño del lado mayor","mm",20,250,5],
   ["sliders","res","Detalle de la malla","celdas",60,300,10],
   ["sliders","base","Grosor de la base","mm",0.4,10,0.2],
   ["sliders","relieve","Altura del relieve","mm",0,20,0.2],
   ["sliders","suave","Suavizado","",0,5,1],
+  ["slidersSinBase","corte","Nivel de corte","%",5,90,5],
   ["slidersSilueta","tol","Tolerancia del fondo","",5,120,5],
   ["slidersHoyo","hoyo","Diámetro del agujero","mm",3,12,0.5]
 ];
@@ -313,6 +341,13 @@ function aplicarModo(m){
 document.querySelectorAll('input[name=modo]').forEach(r=>r.addEventListener("change",()=>{aplicarModo(r.value);pedir();}));
 $("inv").addEventListener("change",pedir);
 $("hoyoOn").addEventListener("change",pedir);
+$("soloMayor").addEventListener("change",pedir);
+$("sinBase").addEventListener("change",()=>{
+  const on=$("sinBase").checked;
+  $("grupoSinBase").hidden=!on;
+  document.querySelector('label[for=r_base]').textContent=on?"Grosor mínimo":"Grosor de la base";
+  pedir();
+});
 aplicarModo("relieve");
 
 // ---------- Carga de la foto ----------
@@ -359,21 +394,32 @@ function calcular(){
     const mask=(modo==="silueta")?silhouetteMask(d,nx,ny,S.tol):null;
     if(S.suave>0) lum=boxBlur(lum,nx,ny,S.suave);
     const nr=normalize(lum,mask), inv=$("inv").checked;
+    const sinBase=$("sinBase").checked;
+    let sel=mask;
+    if(sinBase){
+      const corte=S.corte/100;
+      sel=new Uint8Array(n);
+      for(let p=0;p<n;p++){
+        const v=inv?1-nr[p]:nr[p];
+        sel[p]=((!mask||mask[p])&&v>=corte)?1:0;
+      }
+      if($("soloMayor").checked) sel=soloMayor(sel,nx,ny);
+    }
     const h=new Float32Array(n);
     for(let p=0;p<n;p++){
-      if(mask&&!mask[p]){h[p]=0;continue;}
+      if(sel&&!sel[p]){h[p]=0;continue;}
       const v=inv?1-nr[p]:nr[p];
       h[p]=S.base+v*S.relieve;
     }
     const cell=S.lado/Math.max(nx,ny);
-    if(mask&&$("hoyoOn").checked) tallarHoyo(h,mask,nx,ny,cell,S.hoyo);
+    if(sel&&modo==="silueta"&&$("hoyoOn").checked) tallarHoyo(h,sel,nx,ny,cell,S.hoyo);
 
     tris=buildTris(h,nx,ny,cell);
     let hmax=0; for(let p=0;p<n;p++) if(h[p]>hmax) hmax=h[p];
     dims={w:nx*cell,hh:ny*cell,z:hmax};
     $("bajar").disabled=!tris.length;
     if(!tris.length){
-      $("info").textContent="No se encontró ninguna pieza. Subí la tolerancia del fondo o usá una foto con fondo liso.";
+      $("info").textContent="No quedó ninguna pieza. Bajá el nivel de corte, la tolerancia del fondo, o usá una foto con fondo liso.";
       if(mesh) mesh.visible=false; dibujar(); return;
     }
     const mb=(84+tris.length/9*50)/1048576;
